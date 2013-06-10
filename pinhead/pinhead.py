@@ -4,6 +4,9 @@ import os
 import subprocess
 import libvirt
 from operator import itemgetter
+import logging
+import logging.handlers
+
 
 def vCPUInfo():
 	''' This gathers info about vCPU requirements of currently running domains by querying libvirt and counting active vcpus. '''
@@ -50,7 +53,7 @@ def pCPUInfo():
 			sockets = int(line.split(":")[1].strip())
 	
 	if not (cpus * threadsPerCore * coresPerSocket * sockets):
-		print 'Failed to collect meaningful information about physical CPUs. Exiting'
+		log.info('Failed to collect meaningful information about physical CPUs. Exiting')
 		sys.exit(1)
 
 	#print "%d cpus, %d threadsPerCore, %d coresPerSocket, %d sockets" % (cpus, threadsPerCore, coresPerSocket, sockets)
@@ -110,7 +113,7 @@ def deviseAndApplyStrategy():
 	for vm in vInfo:
 		vmID = vm[0]
 		vcpus = vm[1]
-		print "vm id %d has %d vcpus." % (vmID, vcpus)
+		log.info("vm id %d has %d vcpus." % (vmID, vcpus))
 		
 		# get a list of sockets in current load order (lightest first)
 		sortedSockets = getSocketsSortedByLoad()
@@ -175,7 +178,7 @@ def getThreadsForAllocation(sortedSockets, numOfvCPUs):
 	
 	# what if we run out of sockets? FIXME
 	if assignedCPUs < numOfvCPUs:
-		print "insufficient threads (need %d); allocation incomplete" % (numOfvCPUs)
+		log.info("insufficient threads (need %d); allocation incomplete" % (numOfvCPUs))
 
 	return assignedThreads
 
@@ -221,7 +224,7 @@ def doPinning(vmID):
 				if vmID in thread[2]:
 					# one vcpu from this vm needs to be pinned to this thread (linux cpu is in thread[1])
 					vCPUNumber = vmCPUInfo[vCPUBeingPinnedPosition][0]
-					print "pinning vm %d (vCPU %d) to thread %s (linux %s)" % (vmID, vCPUNumber, thread[0], thread[1])
+					log.info("pinning vm %d (vCPU %d) to thread %s (linux %s)" % (vmID, vCPUNumber, thread[0], thread[1]))
 					pinMappings.append([vCPUNumber, thread[1]])
 					vCPUBeingPinnedPosition += 1 # or we could use a pop/stack system
 	
@@ -254,10 +257,19 @@ def doPinning(vmID):
 
 if __name__ == "__main__":
 	
+	# set up logging
+	
+	log = logging.getLogger(__name__)
+	log.setLevel(logging.INFO)
+	handler = logging.handlers.SysLogHandler(address = '/dev/log')
+	formatter = logging.Formatter('%(module)s.%(funcName)s: %(message)s')
+	handler.setFormatter(formatter)
+	log.addHandler(handler)
+
 	# Set up connection to kvm
 	conn = libvirt.open('qemu:///system')
 	if conn == None:
-		print 'Failed to open connection to the hypervisor. Exiting'
+		log.info('Failed to open connection to the hypervisor. Exiting')
 		sys.exit(1)
 	
 	# Populate global objects with necessary information
