@@ -32,7 +32,7 @@ def vCPUInfo():
 	domsSortedbyvCPUs = sorted(domvCPUs.items(), key=itemgetter(1), reverse = True)
 	
 	if len(domsSortedbyvCPUs) == 0:
-		log.info('No running domains. Exiting')
+		log.warn('No running domains. Exiting')
 		sys.exit(1)
 	
 	''' We now have a structure that holds vcpu allocation requests for currently running domains.
@@ -58,7 +58,7 @@ def pCPUInfo():
 			sockets = int(line.split(":")[1].strip())
 	
 	if not (cpus * threadsPerCore * coresPerSocket * sockets):
-		log.info('Failed to collect meaningful information about physical CPUs. Exiting')
+		log.error('Failed to collect meaningful information about physical CPUs. Exiting')
 		sys.exit(1)
 
 	#print "%d cpus, %d threadsPerCore, %d coresPerSocket, %d sockets" % (cpus, threadsPerCore, coresPerSocket, sockets)
@@ -118,7 +118,7 @@ def deviseAndApplyStrategy():
 	for vm in vInfo:
 		vmID = vm[0]
 		vcpus = vm[1]
-		log.info("vm id %d has %d vcpus." % (vmID, vcpus))
+		#log.info("vm id %d has %d vcpus." % (vmID, vcpus))
 		
 		# get a list of sockets in current load order (lightest first)
 		sortedSockets = getSocketsSortedByLoad()
@@ -183,7 +183,7 @@ def getThreadsForAllocation(sortedSockets, numOfvCPUs):
 	
 	# what if we run out of sockets? FIXME
 	if assignedCPUs < numOfvCPUs:
-		log.info("insufficient threads (need %d); allocation incomplete" % (numOfvCPUs))
+		log.warn("insufficient threads (need %d); allocation incomplete" % (numOfvCPUs))
 
 	return assignedThreads
 
@@ -220,6 +220,7 @@ def doPinning(vmID):
 
 	pinMappings = []
 	vm = conn.lookupByID(vmID)
+	vmUUID = vm.UUIDString()
 	# retrieve live vcpu pinning for vm
 	livePinInfo = vm.vcpus()[1] # this is a list of tuples with pin map info [(FFTFFT), (...), (...)]
 	vmCPUInfo = vm.vcpus()[0] # something like [(0, 1, 405400000000L, 5), (1, 1, 142000000000L, 13), (2, 1, 208550000000L, 7), (3, 1, 111900000000L, 15)]
@@ -232,7 +233,7 @@ def doPinning(vmID):
 				if vmID in thread[2]:
 					# one vcpu from this vm needs to be pinned to this thread (linux cpu is in thread[1])
 					vCPUNumber = vmCPUInfo[vCPUBeingPinnedPosition][0]
-					log.info("pinning vm %d (vCPU %d) to thread %s (linux %s)" % (vmID, vCPUNumber, thread[0], thread[1]))
+					log.info("pinning vm %d (UUID %s) (vCPU %d) to thread %s (linux %s)" % (vmID, vmUUID, vCPUNumber, thread[0], thread[1]))
 					pinMappings.append([vCPUNumber, thread[1]])
 					vCPUBeingPinnedPosition += 1 # or we could use a pop/stack system
 	
@@ -272,7 +273,7 @@ if __name__ == "__main__":
 	# set up logging
 	
 	log = logging.getLogger(__name__)
-	log.setLevel(logging.INFO)
+	log.setLevel(logging.DEBUG)
 	handler = logging.handlers.SysLogHandler(address = '/dev/log')
 	formatter = logging.Formatter('%(module)s.%(funcName)s: %(message)s')
 	handler.setFormatter(formatter)
@@ -281,7 +282,7 @@ if __name__ == "__main__":
 	# Set up connection to kvm
 	conn = libvirt.open('qemu:///system')
 	if conn == None:
-		log.info('Failed to open connection to the hypervisor. Exiting')
+		log.error('Failed to open connection to the hypervisor. Exiting')
 		sys.exit(1)
 	
 	# Populate global objects with necessary information
