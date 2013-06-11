@@ -17,18 +17,23 @@ def vCPUInfo():
 	
 	for runningDomID in runningDomsIDs:
 		runningDom = conn.lookupByID(runningDomID)
-		#runningDomInfo = runningDom.info()
-		#runningDomvCPUs = runningDomInfo[3] # number of vcpus is always in position 3
-		vmCPUInfo = runningDom.vcpus()[0] # something like [(0, 1, 405400000000L, 5), (1, 1, 142000000000L, 13), (2, 1, 208550000000L, 7), (3, 1, 111900000000L, 15)]
-		runningDomvCPUs = 0
-		for vCPU in vmCPUInfo:
-			if vCPU[1] == 1: runningDomvCPUs += 1 # only count actually running vCPUs
+		if runningDom.isActive():
+			#runningDomInfo = runningDom.info()
+			#runningDomvCPUs = runningDomInfo[3] # number of vcpus is always in position 3
+			vmCPUInfo = runningDom.vcpus()[0] # something like [(0, 1, 405400000000L, 5), (1, 1, 142000000000L, 13), (2, 1, 208550000000L, 7), (3, 1, 111900000000L, 15)]
+			runningDomvCPUs = 0
+			for vCPU in vmCPUInfo:
+				if vCPU[1] == 1: runningDomvCPUs += 1 # only count actually running vCPUs
 
-		#print "Domain %d has %d vCPUs" % (runningDomID, runningDomvCPUs)
-		domvCPUs[runningDomID] = runningDomvCPUs # add to collection of domains with their vCPUs
+			#print "Domain %d has %d vCPUs" % (runningDomID, runningDomvCPUs)
+			domvCPUs[runningDomID] = runningDomvCPUs # add to collection of domains with their vCPUs
 
 	# get a list of (domain ID, domain vCPUs) pairs sorted by descending number of vCPUs
 	domsSortedbyvCPUs = sorted(domvCPUs.items(), key=itemgetter(1), reverse = True)
+	
+	if len(domsSortedbyvCPUs) == 0:
+		log.info('No running domains. Exiting')
+		sys.exit(1)
 	
 	''' We now have a structure that holds vcpu allocation requests for currently running domains.
 	It is a sorted list of tuples (runningDomID, number of vcpus). e.g.: [(7, 4), (8, 2), (9, 2), (10, 1)].	'''
@@ -215,8 +220,11 @@ def doPinning(vmID):
 
 	pinMappings = []
 	vm = conn.lookupByID(vmID)
+	# retrieve live vcpu pinning for vm
+	livePinInfo = vm.vcpus()[1] # this is a list of tuples with pin map info [(FFTFFT), (...), (...)]
 	vmCPUInfo = vm.vcpus()[0] # something like [(0, 1, 405400000000L, 5), (1, 1, 142000000000L, 13), (2, 1, 208550000000L, 7), (3, 1, 111900000000L, 15)]
-	vCPUBeingPinnedPosition = 0 # the position inside vmCPUInfo of the vCPU about to be pinned. we increment the position to move down the list and read the vCPU number
+
+	vCPUBeingPinnedPosition = 0 # the position inside vmCPUInfo/livePinInfo of the vCPU about to be pinned. we increment the position to move down the list and read the vCPU number
 	
 	for socket in pInfo:
 		for core in socket:
@@ -243,10 +251,14 @@ def doPinning(vmID):
 		pinMask[posOfCPUinMask] = True # pin mask updated with the pinning for this vCPU/CPU combo
 		pinMask = tuple(pinMask) # api call requires a tuple, not a list
 		pinnablevCPU = pinMapping[0]
-		#print pinnablevCPU, pinMask
-		vm.pinVcpu(pinnablevCPU, pinMask)
+		
+		# retrieve live cpu pin mask for specific vcpu and compare to proposed one
+		livePinMask = livePinInfo[pinnablevCPU]
+		if livePinMask == pinMask:
+			log.info("live pin mask for vCPU %d matches proposition; skipping repinning" % (pinnablevCPU))
+		else:
+			vm.pinVcpu(pinnablevCPU, pinMask)
 
-	
 	'''https://www.redhat.com/archives/libvirt-users/2010-September/msg00073.html
 	domain.pinVcpu(1, (False, False, True, False, True, False....[and so on til I have 16 things]))
 	In other words, pinVcpu accepts as arguments the vCPU that I wish to act on,
