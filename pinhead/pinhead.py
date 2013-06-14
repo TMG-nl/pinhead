@@ -7,6 +7,24 @@ from operator import itemgetter
 import logging
 import logging.handlers
 
+# internals
+vInfo = []
+pInfo = []
+
+# logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
+handler = logging.handlers.SysLogHandler(address = '/dev/log')
+formatter = logging.Formatter('%(module)s.%(funcName)s: %(message)s')
+handler.setFormatter(formatter)
+log.addHandler(handler)
+
+# connection to kvm
+conn = libvirt.open('qemu:///system')
+if conn == None:
+	log.error('Failed to open connection to the hypervisor. Exiting')
+	sys.exit(1)
+
 
 def vCPUInfo():
 	''' This gathers info about vCPU requirements of currently running domains by querying libvirt and counting active vcpus. '''
@@ -39,6 +57,7 @@ def vCPUInfo():
 	It is a sorted list of tuples (runningDomID, number of vcpus). e.g.: [(7, 4), (8, 2), (9, 2), (10, 1)].	'''
 
 	return domsSortedbyvCPUs
+
 
 def pCPUInfo():
 	''' This gathers info about current configuration of local sockets/cpus/cores/threads.
@@ -115,6 +134,11 @@ def deviseAndApplyStrategy():
 	2 vcpus: pin to a free core + ht on the freest socket (or two cores on the same socket if no ht)
 	1 vcpu: pin to a free core on the freest socket, don't use ht: only use it if we don't have free cores left. '''
 
+	# update internal structures
+	global pInfo, vInfo
+	vInfo = vCPUInfo()
+	pInfo = pCPUInfo()
+
 	for vm in vInfo:
 		vmID = vm[0]
 		vcpus = vm[1]
@@ -132,10 +156,15 @@ def deviseAndApplyStrategy():
 		
 		# do the pinning
 		doPinning(vmID)
+	
+	return 0
 
 
 def getSocketsSortedByLoad():
 	''' Find and return a list of the best sockets in pInfo for allocation of vms. '''
+
+	global pInfo
+	global vInfo
 
 	curSocket = 0
 	loadForSocket = {} # this keeps track of the load for each socket[0], [1], etc (as many as in pInfo)
@@ -157,6 +186,9 @@ def getThreadsForAllocation(sortedSockets, numOfvCPUs):
 	''' From the given list of sockets (already sorted by load) get the #numOfvCPUs best threads for allocating the virtual cpus.
 	sortedSockets looks like: [(1, 0) (0, 1) (2, 1) (3, 4)], a list of (socket number, load).
 	We run down the list and fetch the threads until we have assigned all vcpus. '''
+
+	global pInfo
+	global vInfo
 
 	assignedCPUs = 0
 	assignedThreads = []
@@ -191,6 +223,9 @@ def getThreadsForAllocation(sortedSockets, numOfvCPUs):
 def getFreestCores(socket):
 	''' This finds the single best available core/pair of threads in socket. '''
 
+	global pInfo
+	global vInfo
+
 	curCore = 0
 	loadForCore = {} # this keeps track of the load for each core[0], [1], etc.
 	for core in pInfo[socket]:
@@ -207,6 +242,9 @@ def getFreestCores(socket):
 
 def doAllocation(chosenThreads, vmID):
 	#print "allocating vm %d to threads " % (vmID), chosenThreads
+
+	global pInfo
+	global vInfo
 	
 	for thread in chosenThreads:
 		# save the pinning info to pInfo
@@ -217,6 +255,9 @@ def doAllocation(chosenThreads, vmID):
 def doPinning(vmID):
 	''' This does the actual pinning. We walk down pInfo looking for a thread with this vmID in thread[2] (among other ones)
 	and make a list of vcpu number -> linux cpu mappings. '''
+
+	global pInfo
+	global vInfo
 
 	pinMappings = []
 	vm = conn.lookupByID(vmID)
@@ -269,29 +310,4 @@ def doPinning(vmID):
 
 
 if __name__ == "__main__":
-	
-	# set up logging
-	
-	log = logging.getLogger(__name__)
-	log.setLevel(logging.DEBUG)
-	handler = logging.handlers.SysLogHandler(address = '/dev/log')
-	formatter = logging.Formatter('%(module)s.%(funcName)s: %(message)s')
-	handler.setFormatter(formatter)
-	log.addHandler(handler)
-
-	# Set up connection to kvm
-	conn = libvirt.open('qemu:///system')
-	if conn == None:
-		log.error('Failed to open connection to the hypervisor. Exiting')
-		sys.exit(1)
-	
-	# Populate global objects with necessary information
-	vInfo = vCPUInfo()
-	pInfo = pCPUInfo()
-
-	# for testing:
-	#pInfo = [[[['s0c0t0', 'cpu1', []], ['s0c0t1', 'cpu9', []]], [['s0c1t0', 'cpu3', []], ['s0c1t1', 'cpu11', []]], [['s0c2t0', 'cpu5', []], ['s0c2t1', 'cpu13', []]], [['s0c3t0', 'cpu7', []], ['s0c3t1', 'cpu15', []]]], [[['s1c0t0', 'cpu0', []], ['s1c0t1', 'cpu8', []]], [['s1c1t0', 'cpu2', []], ['s1c1t1', 'cpu10', []]], [['s1c2t0', 'cpu4', []], ['s1c2t1', 'cpu12', []]], [['s1c3t0', 'cpu6', []], ['s1c3t1', 'cpu14', []]]]]
-	#pInfo = [[[['s0c0t0', 'cpu1', []], ['s0c0t1', 'cpu9', []]], [['s0c1t0', 'cpu3', []], ['s0c1t1', 'cpu11', []]], [['s0c2t0', 'cpu5', []], ['s0c2t1', 'cpu13', []]], [['s0c3t0', 'cpu7', []], ['s0c3t1', 'cpu15', []]]]]
-	#vInfo = [(7, 4), (8, 4), (9, 2), (10, 1)]
-	
 	deviseAndApplyStrategy()
