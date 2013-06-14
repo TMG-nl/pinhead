@@ -1,4 +1,5 @@
 #!/usr/bin/python2.7
+import os
 import subprocess
 import logging
 import logging.handlers
@@ -12,16 +13,16 @@ class PinHeadRunHook(object):
 		log = logging.getLogger(__name__)
 		log.setLevel(logging.DEBUG)
 		handler = logging.handlers.SysLogHandler(address = '/dev/log')
-		formatter = logging.Formatter('%(module)s.%(funcName)s: %(message)s')
+		formatter = logging.Formatter('pinhead.%(funcName)s: %(message)s')
 		handler.setFormatter(formatter)
 		log.addHandler(handler)
-		
+
 		# do the pinhead run
+		curPath = os.path.dirname(__file__)
 		log.info("Hook called. Doing the pinhead run...")
 		
 		try:
-			#exitCode = subprocess.call(['/usr/bin/python2.7', '/usr/lib64/python2.7/site-packages/pinhead/pinhead.py'])
-			exitCode = 0
+			exitCode = subprocess.call(['/usr/bin/python2.7', curPath + '/pinhead.py'])
 			if exitCode == 0:
 				log.info("Pinhead run exited successfully")
 			else:
