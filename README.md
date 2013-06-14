@@ -1,4 +1,4 @@
 pinhead
 =======
 
-Libvirt CPU pinning
+Libvirt CPU pinning + Nova hooks
