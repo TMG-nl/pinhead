@@ -50,8 +50,8 @@ def vCPUInfo():
 	domsSortedbyvCPUs = sorted(domvCPUs.items(), key=itemgetter(1), reverse = True)
 	
 	if len(domsSortedbyvCPUs) == 0:
-		log.warn('No running domains. Exiting')
-		sys.exit(0)
+		log.warn('No running domains detected. Exiting')
+		sys.exit(1)
 	
 	''' We now have a structure that holds vcpu allocation requests for currently running domains.
 	It is a sorted list of tuples (runningDomID, number of vcpus). e.g.: [(7, 4), (8, 2), (9, 2), (10, 1)].	'''
