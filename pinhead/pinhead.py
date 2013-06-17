@@ -36,8 +36,6 @@ def vCPUInfo():
 	for runningDomID in runningDomsIDs:
 		runningDom = conn.lookupByID(runningDomID)
 		if runningDom.isActive():
-			#runningDomInfo = runningDom.info()
-			#runningDomvCPUs = runningDomInfo[3] # number of vcpus is always in position 3
 			vmCPUInfo = runningDom.vcpus()[0] # something like [(0, 1, 405400000000L, 5), (1, 1, 142000000000L, 13), (2, 1, 208550000000L, 7), (3, 1, 111900000000L, 15)]
 			runningDomvCPUs = 0
 			for vCPU in vmCPUInfo:
@@ -118,8 +116,6 @@ def pCPUInfo():
 						# match found. try to map cpu## to second slot in the structure
 						if thread[1] is None:
 							thread[1] = 'cpu' + str(cpu) # mapped to the correct /sys/devices/system/cpu/cpu##
-							#print thread[0], ' -> ', thread[1]
-							#print cpuTree
 							break # stop now, or the cpu will be assigned more than once
 	
 	return cpuTree
@@ -142,11 +138,9 @@ def deviseAndApplyStrategy():
 	for vm in vInfo:
 		vmID = vm[0]
 		vcpus = vm[1]
-		#log.info("vm id %d has %d vcpus." % (vmID, vcpus))
 		
 		# get a list of sockets in current load order (lightest first)
 		sortedSockets = getSocketsSortedByLoad()
-		# print "available sockets: ", sortedSockets
 		
 		# pass the list to the free(st) thread finder function
 		sortedThreads = getThreadsForAllocation(sortedSockets, vcpus)
@@ -241,14 +235,12 @@ def getFreestCores(socket):
 
 
 def doAllocation(chosenThreads, vmID):
-	#print "allocating vm %d to threads " % (vmID), chosenThreads
 
 	global pInfo
 	global vInfo
 	
 	for thread in chosenThreads:
 		# save the pinning info to pInfo
-		#print "allocating vm %d to thread %s (linux %s)" % (vmID, thread[0], thread[1])
 		thread[2].append(vmID)
 
 
@@ -276,7 +268,7 @@ def doPinning(vmID):
 					vCPUNumber = vmCPUInfo[vCPUBeingPinnedPosition][0]
 					log.info("pinning vm %d (UUID %s) (vCPU %d) to thread %s (linux %s)" % (vmID, vmUUID, vCPUNumber, thread[0], thread[1]))
 					pinMappings.append([vCPUNumber, thread[1]])
-					vCPUBeingPinnedPosition += 1 # or we could use a pop/stack system
+					vCPUBeingPinnedPosition += 1
 	
 	for pinMapping in pinMappings:
 		''' First we need to make a list of True/False values, one for each linux CPU.
